@@ -1,0 +1,115 @@
+trigger:
+- development
+
+stages:
+- stage: Build
+
+  jobs:
+  - job: Build
+
+    pool:
+      vmImage: ubuntu-latest  ## we can update agent pool also or self hosted agents here ##
+
+    steps:
+    - task: Nodetool@0
+      inputs:
+        version:'10.x'
+      displayname: 'install Node.js'
+
+    - script: |
+        npm install
+        npm run build
+      displayname: 'install npm and build'
+
+    - script: |
+        npm test
+        npm run test:coverage
+      displayname: 'run unit test and generate code coverage'
+
+      ## login to sonarqube, create your project, give name any and get the project key ##
+
+    - task: SonarqubePrepare@5
+      inputs:
+        SonarQube: '<sonarqube service connecttion details>'
+        ScannerMode: 'CLI'
+        ConfigMode: 'manual'
+        cliProjectKey: '<YourProjectKey>'
+        cliProjectName: '<YourProjectName>'
+        cliProjectVersion: '1.0'
+      displayName: 'Prepare SonarQube Analysis'
+
+    - script: |
+        sonar-scanner \
+          -Dsonar.projectKey=<YourProjectKey> \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=<SonarQubeURL> \
+          -Dsonar.login=<SonarQubeToken> \
+          -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+      displayName: 'Run SonarQube Scanner'
+
+    - task: SonarQubePublish@5
+      inputs:
+        PollingTimeOutSec: '300'
+      displayname: publish sonarqube quality
+
+      ## Copy files to the destination. Your artifact should be copied into the artifact staging then archive the copied files after that publis it to the artifact ##
+
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(Build.SourceDirectory)' ## where you source code reside and dist file gets created after build ##
+        Content: 'dis/**'
+        DestinationFolder: '$(Build.ArtifactStagingDirectory)'
+        CleanTargetFolder: True
+      displayname: 'copy build artifact file'
+
+    - task: ArchiveFiles@2
+      inputs:
+        RootFolderorFile: '$(Build.ArtifactStagingDirectory)/dist'
+        includeRootFolder: False
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        replaceExistingArchive: True
+      displayname: 'Archive file as app.zip'
+
+    - task: PublishBuildArtifact@1
+      inputs:
+        PathToPablish: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        ArtfifactName: 'webapp'
+        publishLocation: 'Container'
+
+- stage: Test
+  dependsOn: Build
+  jobs:
+  - job: DeployToTest
+
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+    - script: |
+        npm run test:functional
+      displayname: 'Run Functional test'
+
+    - task:
+      inputs:
+        azureSubscription: '<azure test subscription details>'
+        appName: 'TE-webapp-01'
+        package: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+      displayname: 'Deploy to azure test env'
+    
+- stage: Prod
+  dependsOn: Test
+  jobs:
+  - job: Deploy
+    
+    pool:
+      vmImage: ubuntu-latest
+    
+    steps:
+    - task:
+      input: 
+        azureSubscription: '<azure prod subscription>'
+        appName: 'PR-webapp-01'
+        package: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+      displayname: 'Deploy to Production'
+
