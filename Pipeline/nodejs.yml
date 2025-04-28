@@ -36,7 +36,7 @@ stages:
         cliProjectKey: '<YourProjectKey>'
         cliProjectName: '<YourProjectName>'
         cliProjectVersion: '1.0'
-      displayName: 'Prepare SonarQube Analysis'
+      displayName: 'Prepare SonarQube Analysis for test'
 
     - script: |
         sonar-scanner \
